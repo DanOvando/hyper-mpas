@@ -1,3 +1,10 @@
+!results/README
+results/*.rds
+results/*.csv
+results/*.Rdata
+results/*.RData
+
+
 
 *.Rproj
 # History files

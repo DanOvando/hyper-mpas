@@ -8,7 +8,17 @@
 
 The goal of hyper-mpas is to expand on the ideas of Marshall et
 al. (2021) and explore how hyperallometry affects the outcomes of MPA in
-a range of circumstances
+a range of circumstances.
+
+See run\_hyper\_mpas.R for current work.
+
+This project is set up with
+[`renv`](https://rstudio.github.io/renv/articles/renv.html) to manage
+package dependencies. Inside R (and with your working directory set
+correctly) run `renv::restore()`. Follow all prompts. This will install
+the correct versions of all the packages needed to replicate our
+results. Packages are installed in a stand-alone project library for
+this paper, and will not affect your installed R packages anywhere else.
 
 Setup
 
@@ -39,20 +49,21 @@ time_step <- 1 / seasons
 
 steps <- years * seasons
 
-adult_movement_sigma <- resolution * 10
+adult_movement_sigma <- resolution
+
 
 recruit_movement_sigma <- resolution * 10
 
 rec_form <- 1
 
-hyper_expo <- 1.75
+hyper_expo <- 1.5
 
-steepness <- 0.7
+steepness <- 0.6
 
-fished_depletion <- 0.25
+fished_depletion <- 0.15
 
 mpa <- expand_grid(x = 1:resolution, y= 1:resolution) %>% 
-  mutate(mpa = (1:nrow(.)) < (0.25 * resolution^2))
+  mutate(mpa = (1:nrow(.)) < (0.7 * resolution^2))
 
 mpa %>% 
   ggplot(aes(x,y,fill = mpa)) + 
@@ -79,9 +90,8 @@ eq <- sim[[length(sim)]][[1]]
 yield <- sum(eq$c_p_a)
 
 f <- mean((eq$e_p_fl * tmp_fleet[[1]]$metiers[[1]]$catchability)[,1])
-
 refs <- tibble(e_msy = tmp_fleet[[1]]$base_effort, fmsy = f, msy = yield, ssb_msy = sum(eq$ssb_p_a),
-               ssb_msy_to_ssb0 = sum(eq$ssb_p_a) / eq$ssb0)
+               ssb_msy_to_ssb0 = sum(eq$ssb_p_a) / eq$ssb0, bmsy_to_b0 = sum(eq$b_p_a) / fauna[[1]]$b0)
 
 if (use == "opt"){
   out <- -yield
@@ -112,8 +122,8 @@ iso_critter <-
       fished_depletion = fished_depletion,
       resolution = resolution,
       steepness = steepness,
-      ssb0 = 1000,
-      fec_expo = 1
+      fec_expo = 1,
+      ssb0 = 1000
     )
   )
 #> ══  1 queries  ═══════════════
@@ -125,6 +135,13 @@ iso_critter <-
 #> ● Total: 1 
 #> ● Found: 1 
 #> ● Not Found: 0
+
+iso_critter$bigeye$plot()
+```
+
+![](README_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+
+``` r
 
 iso_fleet <- list("longline" = create_fleet(
     list("bigeye" = Metier$new(
@@ -146,28 +163,30 @@ a <- Sys.time()
 iso_fleet <- tune_fleets(iso_critter, iso_fleet, tune_type = "depletion") 
 
 Sys.time() - a
-#> Time difference of 3.539902 secs
+#> Time difference of 3.54111 secs
 
 ref_opt <- nlminb(log(1e-3), find_refs, fauna = iso_critter, fleet = iso_fleet)
 
 iso_refpoints <- find_refs(ref_opt$par, fauna = iso_critter, fleet = iso_fleet, use = "refs")
- iso_critter$bigeye$plot()
+ 
+iso_critter$bigeye$plot()
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-4-2.png)<!-- -->
 
 ``` r
-ref_check <- tibble(emult = seq(1e-3,2, length.out = 20)) %>% 
-  mutate(tmp = map(log(emult), ~find_refs(.x, fauna = iso_critter, fleet = iso_fleet, use = "refs")))
+iso_ref_check <- tibble(emult = seq(1e-3,2, length.out = 40)) %>% 
+  mutate(tmp = map(log(emult), ~find_refs(.x, fauna = iso_critter, fleet = iso_fleet, use = "refs"))) %>% 
+  mutate(type = "Isometric")
 
-ref_check %>% 
+iso_ref_check %>% 
   unnest(cols = tmp) %>% 
-  ggplot(aes(emult, msy)) + 
+  ggplot(aes(bmsy_to_b0, msy)) + 
   geom_point() + 
   geom_vline(aes(xintercept = exp(ref_opt$par)))
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-4-2.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-4-3.png)<!-- -->
 
 ``` r
 a <- Sys.time()
@@ -179,7 +198,7 @@ iso_sim <- simmar(fauna = iso_critter,
                               mpa_year = floor(years * .5)))
 
 Sys.time() - a
-#> Time difference of 0.6154649 secs
+#> Time difference of 0.6312251 secs
 
 
 proc_iso_sim <- process_marlin(sim = iso_sim, time_step = time_step, keep_age = FALSE)
@@ -187,13 +206,13 @@ proc_iso_sim <- process_marlin(sim = iso_sim, time_step = time_step, keep_age = 
 plot_marlin(proc_iso_sim)
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-4-3.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-4-4.png)<!-- -->
 
 ``` r
 plot_marlin(proc_iso_sim, plot_var = "c")
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-4-4.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-4-5.png)<!-- -->
 
 Now, a simulation with hyperallometry
 
@@ -211,8 +230,8 @@ hyper_critter <-
       fished_depletion = fished_depletion,
       resolution = resolution,
       steepness = steepness,
-      ssb0 = 1000,
-      fec_expo = hyper_expo
+      fec_expo = hyper_expo,
+      ssb0 = 1000
     )
   )
 #> ══  1 queries  ═══════════════
@@ -251,16 +270,17 @@ a <- Sys.time()
 hyper_fleet <- tune_fleets(hyper_critter, hyper_fleet, tune_type = "depletion") 
 
 Sys.time() - a
-#> Time difference of 3.053718 secs
+#> Time difference of 3.152861 secs
 
 ref_opt <- nlminb(log(1e-3), find_refs, fauna = hyper_critter, fleet = hyper_fleet)
 
 hyper_refpoints <- find_refs(ref_opt$par, fauna = hyper_critter, fleet = hyper_fleet, use = "refs")
 
-ref_check <- tibble(emult = seq(1e-3,2, length.out = 20)) %>% 
-  mutate(tmp = map(log(emult), ~find_refs(.x, fauna = hyper_critter, fleet = hyper_fleet, use = "refs")))
+hyper_ref_check <- tibble(emult = seq(1e-3,2, length.out = 40)) %>% 
+  mutate(tmp = map(log(emult), ~find_refs(.x, fauna = hyper_critter, fleet = hyper_fleet, use = "refs"))) %>%
+  mutate(type = "Hyperallometric")
 
-ref_check %>% 
+hyper_ref_check %>% 
   unnest(cols = tmp) %>% 
   ggplot(aes(emult, msy)) + 
   geom_point() + 
@@ -280,7 +300,7 @@ hyper_sim <- simmar(fauna = hyper_critter,
                               mpa_year = floor(years * .5)))
 
 Sys.time() - a
-#> Time difference of 0.606724 secs
+#> Time difference of 0.451395 secs
 
 
 proc_hyper_sim <- process_marlin(sim = hyper_sim, time_step = time_step, keep_age = FALSE)
@@ -299,33 +319,46 @@ plot_marlin(proc_hyper_sim, plot_var = "c")
 And compare
 
 ``` r
-iso_refpoints$fmsy / hyper_refpoints$fmsy
-#> [1] 1.07985
+fmsy_ratio <- round(iso_refpoints$fmsy / hyper_refpoints$fmsy,2)
+
+yield_curve <- iso_ref_check %>% 
+  bind_rows(hyper_ref_check) %>% 
+  unnest(cols = tmp)
+
+
+yield_curve %>% 
+  ggplot(aes(fmsy, msy, color = type)) + 
+  geom_line() + 
+  scale_x_continuous(name = "F") + 
+  scale_y_continuous(name  = "Yield") + 
+  labs(caption = glue::glue("Isometric FMSY is {fmsy_ratio} times Hyperallometric FMSY"))
 ```
+
+![](README_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
 ``` r
 iso_critter$bigeye$plot()
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
 ``` r
 hyper_critter$bigeye$plot()
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-7-2.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-8-2.png)<!-- -->
 
 ``` r
 plot_marlin("Isometric" = proc_iso_sim, "Hyperallometric" = proc_hyper_sim)
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-7-3.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-8-3.png)<!-- -->
 
 ``` r
 plot_marlin("Isometric" = proc_iso_sim, "Hyperallometric" = proc_hyper_sim, plot_var = "c")
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 ``` r
 iso_cmsy <- proc_iso_sim$fleets %>% 
@@ -350,4 +383,4 @@ cmsys %>%
   geom_point()
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+![](README_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
